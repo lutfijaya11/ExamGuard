@@ -24,7 +24,18 @@ jobs:
 
       - name: Build iOS App
         run: |
-          flutter build ios --release --no-codesign
+          set -o pipefail
+          flutter build ios --release --no-codesign 2>&1 | tee build_output.log || true
+
+      - name: Check Build & Output Log if Failed
+        run: |
+          if [ ! -d "build/ios/iphoneos/Runner.app" ]; then
+            echo "==================== BUILD FAILED ===================="
+            echo "SHOWING DETAILED LOGS:"
+            tail -n 150 build_output.log
+            echo "======================================================"
+            exit 1
+          fi
 
       - name: Package Payload into unsigned IPA
         run: |
