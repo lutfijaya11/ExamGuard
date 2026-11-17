@@ -1,12 +1,57 @@
 import UIKit
 import Flutter
-import AutomaticAssessmentConfiguration
 import AudioToolbox
+#if canImport(AutomaticAssessmentConfiguration)
+import AutomaticAssessmentConfiguration
+#endif
+
+@available(iOS 13.4, *)
+class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
+    static let shared = AssessmentManager()
+    var session: AEAssessmentSession?
+    var onViolation: ((String, String) -> Void)?
+
+    func start() {
+        if session == nil {
+            let config = AEAssessmentConfiguration()
+            if #available(iOS 14.0, *) {
+                config.autocorrectMode = .none
+                config.spellCheckMode = .none
+                config.allowsSpellCheck = false
+                config.allowsPredictiveKeyboard = false
+                config.allowsActivityContinuation = false
+                config.allowsDictation = false
+                config.allowsAccessibilitySpeech = false
+            }
+            let s = AEAssessmentSession(configuration: config)
+            s.delegate = self
+            self.session = s
+            s.begin()
+        }
+    }
+
+    func stop() {
+        session?.end()
+        session = nil
+    }
+
+    var isActive: Bool {
+        return session?.isActive ?? false
+    }
+
+    func assessmentSessionDidBegin(_ session: AEAssessmentSession) {}
+    func assessmentSession(_ session: AEAssessmentSession, failedToBeginWithError error: Error) {}
+    func assessmentSessionWasInterrupted(_ session: AEAssessmentSession) {
+        onViolation?("assessment_interrupted", "Sesi ujian terputus atau layar dilepas.")
+    }
+    func assessmentSessionDidEnd(_ session: AEAssessmentSession) {
+        self.session = nil
+    }
+}
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, AEAssessmentSessionDelegate {
+@objc class AppDelegate: FlutterAppDelegate {
     private var methodChannel: FlutterMethodChannel?
-    private var assessmentSession: Any? // AEAssessmentSession (iOS 13.4+)
     private var isExamActive: Bool = false
     private var secureField: UITextField?
 
@@ -21,6 +66,12 @@ import AudioToolbox
             name: "id.sch.exambroku/security",
             binaryMessenger: controller.binaryMessenger
         )
+
+        if #available(iOS 13.4, *) {
+            AssessmentManager.shared.onViolation = { [weak self] code, reason in
+                self?.notifyViolation(code: code, reason: reason)
+            }
+        }
 
         methodChannel?.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
             guard let self = self else { return }
@@ -38,7 +89,6 @@ import AudioToolbox
             case "exitApp":
                 self.disableExamLock()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    // Keluar dari aplikasi secara mulus kembali ke SpringBoard / Home Screen
                     UIControl().sendAction(#selector(URLSessionTask.suspend), to: UIApplication.shared, for: nil)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         exit(0)
@@ -48,7 +98,9 @@ import AudioToolbox
 
             case "unlockViolation":
                 if self.isExamActive {
-                    self.startAssessmentSessionIfNeeded()
+                    if #available(iOS 13.4, *) {
+                        AssessmentManager.shared.start()
+                    }
                 }
                 result(true)
 
@@ -83,7 +135,6 @@ import AudioToolbox
             }
         }
 
-        // Daftarkan pengawas rekaman layar & screenshot
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleScreenCaptureChange),
@@ -105,7 +156,9 @@ import AudioToolbox
         isExamActive = true
         UIApplication.shared.isIdleTimerDisabled = true
 
-        startAssessmentSessionIfNeeded()
+        if #available(iOS 13.4, *) {
+            AssessmentManager.shared.start()
+        }
 
         if blockScreenshots {
             enableSecureScreenLayer()
@@ -119,38 +172,13 @@ import AudioToolbox
         UIApplication.shared.isIdleTimerDisabled = false
 
         if #available(iOS 13.4, *) {
-            if let session = assessmentSession as? AEAssessmentSession {
-                session.end()
-                assessmentSession = nil
-            }
+            AssessmentManager.shared.stop()
         }
 
         disableSecureScreenLayer()
     }
 
-    private func startAssessmentSessionIfNeeded() {
-        if #available(iOS 13.4, *) {
-            if assessmentSession == nil {
-                let config = AEAssessmentConfiguration()
-                if #available(iOS 14.0, *) {
-                    config.autocorrectMode = .none
-                    config.spellCheckMode = .none
-                    config.allowsSpellCheck = false
-                    config.allowsPredictiveKeyboard = false
-                    config.allowsActivityContinuation = false
-                    config.allowsDictation = false
-                    config.allowsAccessibilitySpeech = false
-                }
-                let session = AEAssessmentSession(configuration: config)
-                session.delegate = self
-                self.assessmentSession = session
-                session.begin()
-            }
-        }
-    }
-
     private func applyScreenLocks() {
-        // Pada iOS, status bar disembunyikan otomatis jika UIViewControllerBasedStatusBarAppearance = false
         UIApplication.shared.isStatusBarHidden = true
     }
 
@@ -177,7 +205,7 @@ import AudioToolbox
             isPinned = true
         }
         if #available(iOS 13.4, *) {
-            if let session = assessmentSession as? AEAssessmentSession, session.isActive {
+            if AssessmentManager.shared.isActive {
                 isPinned = true
             }
         }
@@ -223,27 +251,6 @@ import AudioToolbox
                 "reason": reason
             ])
         }
-    }
-
-    // MARK: - AEAssessmentSessionDelegate
-    @available(iOS 13.4, *)
-    func assessmentSessionDidBegin(_ session: AEAssessmentSession) {
-        // Assessment Session berhasil mengunci layar Apple secara resmi
-    }
-
-    @available(iOS 13.4, *)
-    func assessmentSession(_ session: AEAssessmentSession, failedToBeginWithError error: Error) {
-        // Fallback jika tidak memiliki entitlement assessment: pandu siswa gunakan Guided Access (Akses Terpandu)
-    }
-
-    @available(iOS 13.4, *)
-    func assessmentSessionWasInterrupted(_ session: AEAssessmentSession) {
-        notifyViolation(code: "assessment_interrupted", reason: "Sesi ujian terputus atau layar dilepas.")
-    }
-
-    @available(iOS 13.4, *)
-    func assessmentSessionDidEnd(_ session: AEAssessmentSession) {
-        assessmentSession = nil
     }
 
     override func applicationWillResignActive(_ application: UIApplication) {
