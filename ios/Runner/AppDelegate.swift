@@ -1,59 +1,13 @@
 import UIKit
 import Flutter
 import AudioToolbox
-#if canImport(AutomaticAssessmentConfiguration)
-import AutomaticAssessmentConfiguration
-#endif
-
-@available(iOS 13.4, *)
-class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
-    static let shared = AssessmentManager()
-    var session: AEAssessmentSession?
-    var onViolation: ((String, String) -> Void)?
-
-    func start() {
-        if session == nil {
-            let config = AEAssessmentConfiguration()
-            if #available(iOS 14.0, *) {
-                config.autocorrectMode = .none
-                config.spellCheckMode = .none
-                config.allowsSpellCheck = false
-                config.allowsPredictiveKeyboard = false
-                config.allowsActivityContinuation = false
-                config.allowsDictation = false
-                config.allowsAccessibilitySpeech = false
-            }
-            let s = AEAssessmentSession(configuration: config)
-            s.delegate = self
-            self.session = s
-            s.begin()
-        }
-    }
-
-    func stop() {
-        session?.end()
-        session = nil
-    }
-
-    var isActive: Bool {
-        return session?.isActive ?? false
-    }
-
-    func assessmentSessionDidBegin(_ session: AEAssessmentSession) {}
-    func assessmentSession(_ session: AEAssessmentSession, failedToBeginWithError error: Error) {}
-    func assessmentSessionWasInterrupted(_ session: AEAssessmentSession) {
-        onViolation?("assessment_interrupted", "Sesi ujian terputus atau layar dilepas.")
-    }
-    func assessmentSessionDidEnd(_ session: AEAssessmentSession) {
-        self.session = nil
-    }
-}
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     private var methodChannel: FlutterMethodChannel?
     private var isExamActive: Bool = false
     private var secureField: UITextField?
+    private var dynamicAssessmentSession: AnyObject?
 
     override func application(
         _ application: UIApplication,
@@ -66,12 +20,6 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
             name: "id.sch.exambroku/security",
             binaryMessenger: controller.binaryMessenger
         )
-
-        if #available(iOS 13.4, *) {
-            AssessmentManager.shared.onViolation = { [weak self] code, reason in
-                self?.notifyViolation(code: code, reason: reason)
-            }
-        }
 
         methodChannel?.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
             guard let self = self else { return }
@@ -98,9 +46,7 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
 
             case "unlockViolation":
                 if self.isExamActive {
-                    if #available(iOS 13.4, *) {
-                        AssessmentManager.shared.start()
-                    }
+                    self.startAssessmentSessionIfNeeded()
                 }
                 result(true)
 
@@ -135,6 +81,7 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
             }
         }
 
+        // Pengawas rekaman layar & tangkapan layar bawaan iOS
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleScreenCaptureChange),
@@ -147,6 +94,12 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
             name: UIApplication.userDidTakeScreenshotNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleGuidedAccessChange),
+            name: UIAccessibility.guidedAccessStatusDidChangeNotification,
+            object: nil
+        )
 
         GeneratedPluginRegistrant.register(with: self)
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -156,9 +109,7 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
         isExamActive = true
         UIApplication.shared.isIdleTimerDisabled = true
 
-        if #available(iOS 13.4, *) {
-            AssessmentManager.shared.start()
-        }
+        startAssessmentSessionIfNeeded()
 
         if blockScreenshots {
             enableSecureScreenLayer()
@@ -171,11 +122,30 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
         isExamActive = false
         UIApplication.shared.isIdleTimerDisabled = false
 
-        if #available(iOS 13.4, *) {
-            AssessmentManager.shared.stop()
-        }
-
+        stopAssessmentSessionIfNeeded()
         disableSecureScreenLayer()
+    }
+
+    private func startAssessmentSessionIfNeeded() {
+        // Dynamic Assessment Session Loader (Aman dari linker error)
+        guard dynamicAssessmentSession == nil else { return }
+        if let configClass = NSClassFromString("AEAssessmentConfiguration") as? NSObject.Type,
+           let sessionClass = NSClassFromString("AEAssessmentSession") as? NSObject.Type {
+            let config = configClass.init()
+            // Inisialisasi AEAssessmentSession(configuration: config) via reflection
+            let allocSession = sessionClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue()
+            if let sessionInstance = allocSession?.perform(NSSelectorFromString("initWithConfiguration:"), with: config)?.takeUnretainedValue() {
+                self.dynamicAssessmentSession = sessionInstance
+                _ = sessionInstance.perform(NSSelectorFromString("begin"))
+            }
+        }
+    }
+
+    private func stopAssessmentSessionIfNeeded() {
+        if let session = dynamicAssessmentSession {
+            _ = session.perform(NSSelectorFromString("end"))
+            dynamicAssessmentSession = nil
+        }
     }
 
     private func applyScreenLocks() {
@@ -204,8 +174,9 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
         if UIAccessibility.isGuidedAccessEnabled {
             isPinned = true
         }
-        if #available(iOS 13.4, *) {
-            if AssessmentManager.shared.isActive {
+        if let session = dynamicAssessmentSession {
+            let active = session.perform(NSSelectorFromString("isActive")) != nil
+            if active {
                 isPinned = true
             }
         }
@@ -241,6 +212,12 @@ class AssessmentManager: NSObject, AEAssessmentSessionDelegate {
     @objc private func handleUserScreenshot() {
         if isExamActive {
             notifyViolation(code: "screenshot_attempt", reason: "Peringatan: Tangkapan layar (Screenshot) dilarang selama ujian!")
+        }
+    }
+
+    @objc private func handleGuidedAccessChange() {
+        if isExamActive && !UIAccessibility.isGuidedAccessEnabled {
+            notifyViolation(code: "unpinned", reason: "Peringatan: Akses Terpandu (Guided Access) dilepas oleh peserta!")
         }
     }
 
