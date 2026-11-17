@@ -2,6 +2,17 @@ import UIKit
 import Flutter
 import AudioToolbox
 
+@objc(RunnerViewController)
+class RunnerViewController: FlutterViewController {
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
+        return [.all]
+    }
+
+    override var prefersHomeIndicatorAutoHidden: Bool {
+        return true
+    }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     private var methodChannel: FlutterMethodChannel?
