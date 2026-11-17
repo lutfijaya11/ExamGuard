@@ -6,7 +6,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build-ios:
+  build-simulator:
+    name: Build iOS Simulator (for Appetize.io)
     runs-on: macos-latest
     steps:
       - name: Checkout Source Code
@@ -22,26 +23,65 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Build iOS App with Diagnostics
+      - name: Build iOS Simulator App
         run: |
-          echo "=== RUNNING FLUTTER BUILD IOS ==="
-          flutter build ios --release --no-codesign 2>&1 | tee full_xcode.log || true
-          echo "==================== FULL XCODE LOG START ===================="
-          cat full_xcode.log
-          echo "==================== FULL XCODE LOG END ======================"
-
-      - name: Package and Check App
-        run: |
-          APP_PATH=$(find build/ios -name "Runner.app" -type d | grep -iv "simulator" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Runner.app not found. Build had errors above."
+          echo "=== Building iOS Simulator App ==="
+          flutter build ios --simulator
+          SIM_APP=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
+          if [ -z "$SIM_APP" ]; then
+            SIM_APP=$(find build/ios -name "Runner.app" -type d | head -n 1)
+          fi
+          if [ -z "$SIM_APP" ]; then
+            echo "ERROR: Runner.app not found!"
             exit 1
           fi
-          echo "Found app at: $APP_PATH"
+          echo "Simulator Runner.app found at: $SIM_APP"
+          cd "$(dirname "$SIM_APP")"
+          zip -r -y "$GITHUB_WORKSPACE/ExamGuard-iOS-Simulator.zip" Runner.app
+          cd "$GITHUB_WORKSPACE"
+          ls -lh ExamGuard-iOS-Simulator.zip
+
+      - name: Upload Simulator Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExamGuard-iOS-Simulator
+          path: ExamGuard-iOS-Simulator.zip
+
+  build-device:
+    name: Build iOS Physical Device (for Sideloadly / 3uTools)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: |
+          flutter pub get
+
+      - name: Build iOS Physical App
+        run: |
+          echo "=== Building iOS Physical App (Release) ==="
+          flutter build ios --release --no-codesign
+          DEV_APP=$(find build/ios -name "Runner.app" -type d | grep -iv "simulator" | head -n 1)
+          if [ -z "$DEV_APP" ]; then
+            DEV_APP=$(find build/ios -name "Runner.app" -type d | head -n 1)
+          fi
+          if [ -z "$DEV_APP" ]; then
+            echo "ERROR: Runner.app not found!"
+            exit 1
+          fi
+          echo "Physical Runner.app found at: $DEV_APP"
           mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          zip -r -y ExamGuard-iOS-unsigned.ipa Payload
+          cp -r "$DEV_APP" Payload/
+          zip -r -y "$GITHUB_WORKSPACE/ExamGuard-iOS-unsigned.ipa" Payload
           rm -rf Payload
+          ls -lh ExamGuard-iOS-unsigned.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
