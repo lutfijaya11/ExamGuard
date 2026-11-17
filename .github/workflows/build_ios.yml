@@ -22,6 +22,9 @@ jobs:
         run: |
           flutter precache --ios
           flutter pub get
+          cd ios
+          pod install --repo-update
+          cd ..
 
       - name: Build iOS App
         run: |
