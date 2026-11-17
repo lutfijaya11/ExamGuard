@@ -22,37 +22,38 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Build iOS App
-        id: build_step
+      - name: Build iOS Simulator App (For Appetize.io Emulator)
         run: |
-          flutter build ios --release --no-codesign 2>&1 | tee xcode_build.log
-        continue-on-error: true
-
-      - name: Upload Build Log Always
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: xcode_build_log
-          path: xcode_build.log
-
-      - name: Package Payload into unsigned IPA
-        run: |
-          APP_PATH=$(find build/ios -name "Runner.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Runner.app not found. Build likely had errors."
-            echo "=== SUMMARY OF ERRORS ==="
-            grep -E "error:|Error:|FAILED|fatal" xcode_build.log | head -n 30 || true
-            echo "========================="
-            exit 1
+          flutter build ios --simulator --release
+          SIM_APP=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
+          if [ -z "$SIM_APP" ]; then
+            SIM_APP=$(find build/ios -name "Runner.app" -type d | head -n 1)
           fi
-          echo "Found compiled iOS app at: $APP_PATH"
+          echo "Simulator App at: $SIM_APP"
+          cd $(dirname "$SIM_APP")
+          zip -r ../../../ExamGuard-iOS-Simulator.zip Runner.app
+          cd ../../..
+
+      - name: Upload Simulator Zip (For Appetize.io)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExamGuard-iOS-Simulator
+          path: ExamGuard-iOS-Simulator.zip
+
+      - name: Build iOS Physical Device App (For Sideloadly & Real iPhone)
+        run: |
+          flutter build ios --release --no-codesign
+          APP_PATH=$(find build/ios -name "Runner.app" -type d | grep -iv "simulator" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build/ios -name "Runner.app" -type d | head -n 1)
+          fi
+          echo "Physical Device App at: $APP_PATH"
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r ExamGuard-iOS-unsigned.ipa Payload
           rm -rf Payload
-          ls -lh ExamGuard-iOS-unsigned.ipa
 
-      - name: Upload IPA Artifact
+      - name: Upload IPA Artifact (For Real iPhone)
         uses: actions/upload-artifact@v4
         with:
           name: ExamGuard-iOS-unsigned
