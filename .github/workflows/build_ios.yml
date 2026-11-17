@@ -19,9 +19,13 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
+      - name: Prepare Dependencies and Remove CocoaPods Conflict
         run: |
           flutter pub get
+          cd ios
+          pod deintegrate || true
+          rm -f Podfile Podfile.lock
+          cd ..
 
       - name: Build iOS Simulator App
         run: |
@@ -60,9 +64,13 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
+      - name: Prepare Dependencies and Remove CocoaPods Conflict
         run: |
           flutter pub get
+          cd ios
+          pod deintegrate || true
+          rm -f Podfile Podfile.lock
+          cd ..
 
       - name: Build iOS Physical App
         run: |
