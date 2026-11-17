@@ -40,16 +40,14 @@ jobs:
             exit 1
           fi
           echo "Simulator Runner.app found at: $SIM_APP"
-          cd "$(dirname "$SIM_APP")"
-          zip -r -y "$GITHUB_WORKSPACE/ExamGuard-iOS-Simulator.zip" Runner.app
-          cd "$GITHUB_WORKSPACE"
-          ls -lh ExamGuard-iOS-Simulator.zip
+          mkdir -p simulator_app
+          cp -r "$SIM_APP" simulator_app/
 
-      - name: Upload Simulator Zip Artifact
+      - name: Upload Simulator App (For Appetize.io)
         uses: actions/upload-artifact@v4
         with:
           name: ExamGuard-iOS-Simulator
-          path: ExamGuard-iOS-Simulator.zip
+          path: simulator_app/Runner.app
 
   build-device:
     name: Build iOS Physical Device (for Sideloadly / 3uTools)
