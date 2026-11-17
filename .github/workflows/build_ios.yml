@@ -25,20 +25,13 @@ jobs:
       - name: Build iOS Simulator App (For Appetize.io)
         run: |
           flutter build ios --simulator --no-codesign
-          SIM_PATH=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
-          if [ -n "$SIM_PATH" ]; then
-            echo "Packaging simulator app from: $SIM_PATH"
-            mkdir -p sim_out
-            cp -r "$SIM_PATH" sim_out/
-            cd sim_out
-            zip -r ../ExamGuard-iOS-Simulator.zip Runner.app
-            cd ..
-          fi
-        continue-on-error: true
+          cd build/ios/iphonesimulator
+          zip -r -y ../../../ExamGuard-iOS-Simulator.zip Runner.app
+          cd ../../..
+          ls -lh ExamGuard-iOS-Simulator.zip
 
       - name: Upload Simulator Zip (For Appetize.io)
         uses: actions/upload-artifact@v4
-        continue-on-error: true
         with:
           name: ExamGuard-iOS-Simulator
           path: ExamGuard-iOS-Simulator.zip
@@ -53,8 +46,9 @@ jobs:
           echo "Packaging real device app from: $APP_PATH"
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
-          zip -r ExamGuard-iOS-unsigned.ipa Payload
+          zip -r -y ExamGuard-iOS-unsigned.ipa Payload
           rm -rf Payload
+          ls -lh ExamGuard-iOS-unsigned.ipa
 
       - name: Upload IPA Artifact (For Real iPhone)
         uses: actions/upload-artifact@v4
