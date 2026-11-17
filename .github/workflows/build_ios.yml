@@ -23,15 +23,26 @@ jobs:
           flutter pub get
 
       - name: Build iOS App
+        id: build_step
         run: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign 2>&1 | tee xcode_build.log
+        continue-on-error: true
+
+      - name: Upload Build Log Always
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xcode_build_log
+          path: xcode_build.log
 
       - name: Package Payload into unsigned IPA
         run: |
           APP_PATH=$(find build/ios -name "Runner.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: Runner.app not found in build directory!"
-            find build -maxdepth 4
+            echo "Runner.app not found. Build likely had errors."
+            echo "=== SUMMARY OF ERRORS ==="
+            grep -E "error:|Error:|FAILED|fatal" xcode_build.log | head -n 30 || true
+            echo "========================="
             exit 1
           fi
           echo "Found compiled iOS app at: $APP_PATH"
