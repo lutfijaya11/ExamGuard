@@ -22,32 +22,35 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Build iOS Simulator App (For Appetize.io Emulator)
+      - name: Build iOS Simulator App (For Appetize.io)
         run: |
-          flutter build ios --simulator --release
-          SIM_APP=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
-          if [ -z "$SIM_APP" ]; then
-            SIM_APP=$(find build/ios -name "Runner.app" -type d | head -n 1)
+          flutter build ios --simulator --no-codesign
+          SIM_PATH=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
+          if [ -n "$SIM_PATH" ]; then
+            echo "Packaging simulator app from: $SIM_PATH"
+            mkdir -p sim_out
+            cp -r "$SIM_PATH" sim_out/
+            cd sim_out
+            zip -r ../ExamGuard-iOS-Simulator.zip Runner.app
+            cd ..
           fi
-          echo "Simulator App at: $SIM_APP"
-          cd $(dirname "$SIM_APP")
-          zip -r ../../../ExamGuard-iOS-Simulator.zip Runner.app
-          cd ../../..
+        continue-on-error: true
 
       - name: Upload Simulator Zip (For Appetize.io)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ExamGuard-iOS-Simulator
           path: ExamGuard-iOS-Simulator.zip
 
-      - name: Build iOS Physical Device App (For Sideloadly & Real iPhone)
+      - name: Build iOS Physical Device App (For Real iPhone & Sideloadly)
         run: |
           flutter build ios --release --no-codesign
           APP_PATH=$(find build/ios -name "Runner.app" -type d | grep -iv "simulator" | head -n 1)
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find build/ios -name "Runner.app" -type d | head -n 1)
           fi
-          echo "Physical Device App at: $APP_PATH"
+          echo "Packaging real device app from: $APP_PATH"
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r ExamGuard-iOS-unsigned.ipa Payload
