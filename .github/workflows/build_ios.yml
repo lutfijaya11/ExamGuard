@@ -22,20 +22,6 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Build iOS Simulator App (For Appetize.io)
-        run: |
-          flutter build ios --simulator --no-codesign
-          cd build/ios/iphonesimulator
-          zip -r -y ../../../ExamGuard-iOS-Simulator.zip Runner.app
-          cd ../../..
-          ls -lh ExamGuard-iOS-Simulator.zip
-
-      - name: Upload Simulator Zip (For Appetize.io)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ExamGuard-iOS-Simulator
-          path: ExamGuard-iOS-Simulator.zip
-
       - name: Build iOS Physical Device App (For Real iPhone & Sideloadly)
         run: |
           flutter build ios --release --no-codesign
@@ -55,3 +41,26 @@ jobs:
         with:
           name: ExamGuard-iOS-unsigned
           path: ExamGuard-iOS-unsigned.ipa
+
+      - name: Build iOS Simulator App (For Appetize.io)
+        run: |
+          flutter build ios --simulator
+          SIM_PATH=$(find build/ios -name "Runner.app" -type d | grep -i "simulator" | head -n 1)
+          if [ -z "$SIM_PATH" ]; then
+            echo "Simulator app not found"
+            exit 1
+          fi
+          echo "Packaging simulator app from: $SIM_PATH"
+          cd $(dirname "$SIM_PATH")
+          zip -r -y ../../../ExamGuard-iOS-Simulator.zip Runner.app
+          cd ../../..
+          ls -lh ExamGuard-iOS-Simulator.zip
+        continue-on-error: true
+
+      - name: Upload Simulator Zip (For Appetize.io)
+        uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: ExamGuard-iOS-Simulator
+          path: ExamGuard-iOS-Simulator.zip
